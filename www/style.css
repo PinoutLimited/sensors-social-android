@@ -323,3 +323,19 @@ html.scanning #app, html.scanning body::before { visibility: hidden; }
   border: 0; border-top: 1px solid var(--line); background: none; color: var(--text); text-align: left; font-size: 16px;
 }
 .sugg-item small { color: var(--muted); font-size: 13px; flex-shrink: 0; }
+
+/* sensor profile: owner's photos and description */
+.card.profile { margin: 12px 0; display: grid; gap: 10px; }
+.ph-grid { display: grid; gap: 6px; grid-template-columns: repeat(3, 1fr); }
+.ph-grid.n1 { grid-template-columns: 1fr; }
+.ph-grid.n2 { grid-template-columns: 1fr 1fr; }
+.ph-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 12px; display: block; background: var(--line); }
+.ph-grid.n1 img { aspect-ratio: 4 / 3; }
+.ph-desc { margin: 0; white-space: pre-line; line-height: 1.45; }
+.ph-grid.edit figure { position: relative; margin: 0; }
+.ph-x { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .6); color: #fff; font-size: 18px; line-height: 1; }
+.prof-form { display: grid; gap: 8px; }
+.prof-form textarea { width: 100%; box-sizing: border-box; }
+.prof-form .btn.outline { justify-self: start; }
+.page-h { margin: 8px 0 4px; font-size: 24px; }
+.muted.small { font-size: 13px; margin: 0; }

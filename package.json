@@ -6,7 +6,8 @@
   "scripts": {
     "sync": "cap sync android",
     "apk": "cap sync android && cd android && ./gradlew assembleDebug",
-    "test": "node --test test/*.test.cjs"
+    "p2p": "esbuild p2p/index.js --bundle --format=iife --global-name=SSP2P --platform=browser --target=chrome100 --minify --legal-comments=none --outfile=www/vendor/p2p.js",
+    "test": "node --test test/*.test.cjs p2p/profile.test.mjs"
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^8.2.2",
@@ -16,6 +17,20 @@
     "@capacitor/core": "^8.0.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.0.0"
+    "@capacitor/cli": "^8.0.0",
+    "@chainsafe/libp2p-noise": "^17.0.0",
+    "@chainsafe/libp2p-yamux": "^8.0.1",
+    "@helia/unixfs": "^8.0.9",
+    "@libp2p/identify": "^4.1.18",
+    "@libp2p/websockets": "^10.1.25",
+    "@multiformats/multiaddr": "^13.0.3",
+    "@polkadot/api": "^17.0.2",
+    "@polkadot/keyring": "^14.0.3",
+    "@polkadot/util": "^14.0.3",
+    "@polkadot/util-crypto": "^14.0.3",
+    "blockstore-core": "^7.0.1",
+    "datastore-core": "^12.0.1",
+    "esbuild": "^0.28.2",
+    "helia": "^7.1.16"
   }
 }

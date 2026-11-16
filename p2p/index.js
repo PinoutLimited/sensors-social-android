@@ -229,7 +229,7 @@ export async function publishProfile(opts) {
     // close the connection 20 s later, before RoSeMAN comes for the blocks. Time out the dial
     // only, and keep the connection up (re-dial if it drops) until the profile is pinned.
     const kuboAddr = multiaddr(opts.kubo);
-    const kuboPeer = kuboAddr.getPeerId();
+    const kuboPeer = String(opts.kubo).split("/p2p/")[1];
     const connectKubo = () =>
       Promise.race([
         helia.libp2p.dial(kuboAddr),

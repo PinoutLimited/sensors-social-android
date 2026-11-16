@@ -1,5 +1,5 @@
 /* "A new version is out": the app is installed from GitHub releases, so nothing else tells people
- * about updates. Pure functions here (node --test test/); app.js fetches and draws. */
+ * about updates. Pure functions here (npm test); app.js fetches and draws. */
 const VERSION_RE = /^v?(\d+(?:\.\d+)*)(?:-([0-9A-Za-z.-]+))?$/;
 
 /** -1, 0 or 1. Semver-style: numeric parts as numbers, a pre-release below its release. */

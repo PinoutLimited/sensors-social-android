@@ -1,4 +1,4 @@
-// node --test test/  — the "new release" notice decides on a version comparison, so pin it down.
+// npm test  — the "new release" notice decides on a version comparison, so pin it down.
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { compareVersions, newerRelease } = require("../www/update.js");

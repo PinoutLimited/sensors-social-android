@@ -98,7 +98,19 @@ function signAndWait(api, tx, pair) {
         return;
       }
       if (r.status.isInBlock) {
-        // rws.call reports the inner call's result in rws.NewCall(sender, Result)
+        // A direct call fails with ExtrinsicFailed; rws.call reports the inner result in rws.NewCall.
+        const failed = r.events.find(({ event }) => event.section === "system" && event.method === "ExtrinsicFailed");
+        if (failed) {
+          const err = failed.event.data[0];
+          let msg = err.toString();
+          if (err.isModule) {
+            const d = api.registry.findMetaError(err.asModule);
+            msg = `${d.section}.${d.name}`;
+          }
+          unsub?.();
+          reject(new Error(msg));
+          return;
+        }
         const inner = r.events.find(({ event }) => event.section === "rws" && event.method === "NewCall");
         const result = inner?.event.data[1];
         if (result && result.isErr) {
@@ -156,10 +168,16 @@ export async function publishProfile(opts) {
     if (!devices.includes(opts.sensor)) {
       throw new Error("This secret phrase is not the owner of this sensor (the sensor is not in its subscription)");
     }
-    if (!devices.includes(owner)) {
-      throw new Error("The owner account is not in its own subscription devices — add it on sensors.social first");
+    // With an RWS subscription the owner writes for free through rws.call (the owner must be one
+    // of its own devices). Without one, the CPS calls are sent directly and the owner pays the
+    // fee in XRT — a fraction of a milli-XRT each.
+    const ledger = await api.query.rws.ledger(owner);
+    const free = ledger.isSome && devices.includes(owner);
+    if (!free) {
+      const balance = (await api.query.system.account(owner)).data.free.toBigInt();
+      if (balance < 10_000_000n) throw new Error("The owner account has no RWS subscription and less than 0.01 XRT for fees");
     }
-    const viaRws = (call) => api.tx.rws.call(owner, call);
+    const viaRws = (call) => (free ? api.tx.rws.call(owner, call) : call);
 
     // 1. Owner's profiles root (identity = owner, so it can be found by address).
     let root = await api.query.cps.identityNode(owner);

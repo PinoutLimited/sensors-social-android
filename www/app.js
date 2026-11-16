@@ -79,6 +79,7 @@ const short = (id) => (id.length > 12 ? id.slice(0, 4) + "…" + id.slice(-4) : 
 const num = (v) => typeof v === "number" && isFinite(v);
 
 const ICON = {
+  camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
   map: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/></svg>',
@@ -781,7 +782,6 @@ async function renderDevice(id, tok) {
     </form>
     <div class="btn-row">
       <button class="btn outline sm" id="rename">Rename</button>
-      <button class="btn outline sm" id="editprof">Sensor profile</button>
       ${isSaved ? `<button class="btn danger sm" id="del">Remove</button>` : `<button class="btn outline sm" id="save">Save</button>`}
       ${following ? `<button class="btn outline sm" id="test">Test notification</button>` : ""}
     </div>
@@ -800,7 +800,6 @@ async function renderDevice(id, tok) {
   if ($("#test")) $("#test").onclick = testNotification;
   if ($("#save")) $("#save").onclick = () => { const a = saved(); a.unshift({ id, kind: "sensor", label: "" }); saveJSON(SAVED_KEY, a); render(); };
   if ($("#del")) $("#del").onclick = () => { removeItem(id); back("#/"); };
-  $("#editprof").onclick = () => nav(`#/s/${encodeURIComponent(id)}/profile`);
   showProfile(id, tok);
 
   try {
@@ -870,16 +869,39 @@ async function getProfile(id) {
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return (await r.json()).result;
 }
-/** The device screen shows a profile only if there is one; no profile or no server = no block. */
+/** Profile card under the readings: thumbnails + a few lines, or an invitation to add them.
+ * The card is the way into the editor; with no profile server it does not render at all. */
 async function showProfile(id, tok) {
-  let p = null;
+  let p;
   try { p = await getProfile(id); } catch { return; }
-  if (tok !== renderToken || !p || (!p.images.length && !p.description)) return;
+  if (tok !== renderToken) return;
   const box = $("#profile");
   if (!box) return;
+  const edit = () => nav(`#/s/${encodeURIComponent(id)}/profile`);
+  const images = p?.images?.slice(0, 3) || [];
+  const desc = p?.description || "";
+  if (!images.length && !desc) {
+    box.className = "card profile empty";
+    box.innerHTML = `<span class="ph-slot" aria-hidden="true">${ICON.camera}</span>
+      <span><b>Sensor profile</b><small>Add photos and a few words — they show on the map.</small></span>`;
+    box.setAttribute("role", "button");
+    box.onclick = edit;
+    return;
+  }
   box.className = "card profile";
-  box.innerHTML = `${p.images.length ? `<div class="ph-grid n${p.images.length}">${p.images.map((c) => `<img src="${profileImg(c)}" alt="Photo of the sensor" loading="lazy">`).join("")}</div>` : ""}
-    ${p.description ? `<p class="ph-desc">${esc(p.description)}</p>` : ""}<small class="muted">From the sensor's owner</small>`;
+  box.innerHTML = `<div class="ph-head"><b>Sensor profile</b><button class="link-btn" id="pedit">Edit</button></div>
+    <div class="ph-row">${images.map((c) => `<button class="ph-thumb" data-c="${esc(c)}" aria-label="Photo of the sensor"><img src="${profileImg(c)}" alt="" loading="lazy"></button>`).join("")}
+    ${desc ? `<p class="ph-desc">${esc(desc)}</p>` : ""}</div>`;
+  $("#pedit").onclick = edit;
+  box.querySelectorAll(".ph-thumb").forEach((b) => (b.onclick = () => {
+    const o = document.createElement("div");
+    o.className = "ph-full";
+    o.innerHTML = `<img src="${profileImg(b.dataset.c)}" alt="Photo of the sensor">`;
+    o.onclick = () => o.remove();
+    document.body.appendChild(o);
+  }));
+  const d = box.querySelector(".ph-desc");
+  if (d) d.onclick = () => d.classList.toggle("open");
 }
 
 let p2pLoading = null;

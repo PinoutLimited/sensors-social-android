@@ -13,6 +13,7 @@ import { webSockets } from "@libp2p/websockets";
 import { noise } from "@chainsafe/libp2p-noise";
 import { yamux } from "@chainsafe/libp2p-yamux";
 import { identify } from "@libp2p/identify";
+import { FaultTolerance } from "@libp2p/interface";
 import { multiaddr } from "@multiformats/multiaddr";
 import { MemoryBlockstore } from "blockstore-core";
 import { MemoryDatastore } from "datastore-core";
@@ -70,6 +71,10 @@ export function findSensorNode(children, sensor) {
 async function startNode() {
   const helia = await createHelia({
     libp2p: {
+      // The phone only dials our Kubo; it listens on nothing. Without this, Helia's browser
+      // defaults try /webrtc and /p2p-circuit, which this bundle has no transports for.
+      addresses: { listen: [] },
+      transportManager: { faultTolerance: FaultTolerance.NO_FATAL },
       transports: [webSockets()],
       connectionEncrypters: [noise()],
       streamMuxers: [yamux()],
@@ -220,7 +225,17 @@ export async function publishProfile(opts) {
     const profileCid = (await fs.addBytes(enc(doc))).toV1();
 
     say("Connecting to the sensors.social IPFS node…");
-    await helia.libp2p.dial(multiaddr(opts.kubo), { signal: AbortSignal.timeout(20000) });
+    // libp2p keeps a dial's abort signal tied to the connection: a timeout signal here would
+    // close the connection 20 s later, before RoSeMAN comes for the blocks. Time out the dial
+    // only, and keep the connection up (re-dial if it drops) until the profile is pinned.
+    const kuboAddr = multiaddr(opts.kubo);
+    const kuboPeer = kuboAddr.getPeerId();
+    const connectKubo = () =>
+      Promise.race([
+        helia.libp2p.dial(kuboAddr),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("Could not reach the sensors.social IPFS node")), 20000)),
+      ]);
+    await connectKubo();
 
     // 4. Point the node at the new profile.
     say("Signing the profile on Robonomics…");
@@ -232,6 +247,9 @@ export async function publishProfile(opts) {
     const deadline = Date.now() + 5 * 60 * 1000;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 4000));
+      if (!helia.libp2p.getConnections().some((c) => c.remotePeer.toString() === kuboPeer && c.status === "open")) {
+        await connectKubo().catch(() => {});
+      }
       try {
         const res = await fetch(`${opts.profileApi}v2/profile/${opts.sensor}`, { cache: "no-store" });
         const p = (await res.json()).result;

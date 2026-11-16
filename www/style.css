@@ -291,6 +291,10 @@ ol.nums li > span { width: 28px; height: 28px; flex-shrink: 0; border-radius: 14
 .app-foot nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 4px; margin-bottom: 8px; }
 .app-foot nav a { padding: 10px 8px; font-size: 14px; font-weight: 500; }
 .app-foot p { margin: 2px 0; }
+.app-foot .update { display: block; margin: 0 0 14px; text-align: left; color: var(--text); border-color: var(--blue2); }
+.app-foot .update[hidden] { display: none; }
+.app-foot .update b { display: block; font-size: 15px; }
+.app-foot .update small { display: block; margin-top: 2px; color: var(--blue2); font-size: 13.5px; }
 .app-foot a { color: var(--blue2); text-decoration: none; }
 @media (prefers-color-scheme: dark) { .app-foot a { color: var(--blue); } }
 

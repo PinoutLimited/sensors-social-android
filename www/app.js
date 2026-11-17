@@ -7,12 +7,18 @@
  *                   (steps from the Altruist AI guide v1.13, section 10)
  *   #/s/<id>        one device: hero reading with a threshold scale, a tile per parameter
  *   #/s/<id>/<k>    one parameter: chart for 24 h / 7 d / 30 d, lowest / average / highest
+ *   #/s/<id>/profile  the owner adds photos and a description (p2p bundle: www/vendor/p2p.js)
  * Data: RoSeMAN public API, raw readings. Alerts: native AlertsPlugin + WorkManager.
  */
 "use strict";
 
 const API = "https://roseman.robonomics.network/";
 const SITE = "https://sensors.social/";
+/* Sensor profiles (photos + owner's description) live in RoSeMAN with a Kubo beside it. The phone
+ * hands photos to that Kubo over IPFS (bitswap); the chain (Robonomics CPS) holds only the CID.
+ * RoSeMAN announces its Kubo at v2/profile/node, so only its URL is configured here. */
+const PROFILE_API = `${API}api/`;
+const CHAIN_RPC = "wss://polkadot.rpc.robonomics.network/";
 
 /* The map opens in a Chrome Custom Tab over the app: its × and the system Back return to the
  * sensors. Loaded in the app's own WebView it replaced the app, with no visible way back. */
@@ -73,6 +79,7 @@ const short = (id) => (id.length > 12 ? id.slice(0, 4) + "…" + id.slice(-4) : 
 const num = (v) => typeof v === "number" && isFinite(v);
 
 const ICON = {
+  camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
   map: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/></svg>',
@@ -211,6 +218,7 @@ window.addEventListener("popstate", render);
 
 function route() {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
+  if (parts[0] === "s" && parts[1] && parts[2] === "profile") return { view: "profile", id: parts[1] };
   if (parts[0] === "s" && parts[1]) return { view: parts[2] ? "param" : "device", id: parts[1], key: parts[2] };
   if (parts[0] === "add") return { view: "add" };
   if (parts[0] === "setup") return { view: "setup", step: Math.min(5, Math.max(1, parseInt(parts[1] || "1", 10))) };
@@ -223,6 +231,7 @@ function render() {
   const r = route();
   if (r.view === "device") return renderDevice(r.id, tok);
   if (r.view === "param") return renderParam(r.id, r.key, tok);
+  if (r.view === "profile") return renderProfileEdit(r.id, tok);
   if (r.view === "add") return renderAdd(tok);
   if (r.view === "setup") return renderSetup(r.step, tok);
   return renderHome(tok);
@@ -763,6 +772,7 @@ async function renderDevice(id, tok) {
     <div class="status-line" id="status"><span class="dot"></span><span>Loading…</span></div>
     <div id="hero"></div>
     <div class="tiles" id="tiles"></div>
+    <div id="profile"></div>
     <div class="card row-set"><div><b>Alerts</b><small>Air turns Poor on the map’s scale, or the sensor is offline for 2 h. Checked about every 15 min.</small></div>
       <label class="switch"><input type="checkbox" id="alert" ${following ? "checked" : ""} aria-label="Alerts"><span></span></label></div>
     <form class="card rename" id="rn" hidden autocomplete="off">
@@ -790,6 +800,7 @@ async function renderDevice(id, tok) {
   if ($("#test")) $("#test").onclick = testNotification;
   if ($("#save")) $("#save").onclick = () => { const a = saved(); a.unshift({ id, kind: "sensor", label: "" }); saveJSON(SAVED_KEY, a); render(); };
   if ($("#del")) $("#del").onclick = () => { removeItem(id); back("#/"); };
+  showProfile(id, tok);
 
   try {
     await markers().catch(() => null);
@@ -849,6 +860,152 @@ async function renderDevice(id, tok) {
   } catch (e) {
     if (tok === renderToken) $("#status").innerHTML = `<span class="dot"></span><span>Could not reach RoSeMAN: ${esc(e.message)}</span>`;
   }
+}
+
+/* ---------- sensor profile: photos and the owner's description ---------- */
+async function profileNode() {
+  const r = await fetch(`${PROFILE_API}v2/profile/node`, { cache: "no-store" });
+  const addr = r.ok ? (await r.json()).result?.multiaddrs?.[0] : null;
+  if (!addr) throw new Error("The sensor server does not take photos yet. Try again later.");
+  return addr;
+}
+const profileImg = (cid) => `${PROFILE_API}v2/profile/image/${encodeURIComponent(cid)}`;
+async function getProfile(id) {
+  const r = await fetch(`${PROFILE_API}v2/profile/${encodeURIComponent(id)}`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return (await r.json()).result;
+}
+/** Profile card under the readings: thumbnails + a few lines, or an invitation to add them.
+ * The card is the way into the editor; with no profile server it does not render at all. */
+async function showProfile(id, tok) {
+  let p;
+  try { p = await getProfile(id); } catch { return; }
+  if (tok !== renderToken) return;
+  const box = $("#profile");
+  if (!box) return;
+  const edit = () => nav(`#/s/${encodeURIComponent(id)}/profile`);
+  const images = p?.images?.slice(0, 3) || [];
+  const desc = p?.description || "";
+  if (!images.length && !desc) {
+    box.className = "card profile empty";
+    box.innerHTML = `<span class="ph-slot" aria-hidden="true">${ICON.camera}</span>
+      <span><b>Sensor profile</b><small>Add photos and a few words — they show on the map.</small></span>`;
+    box.setAttribute("role", "button");
+    box.onclick = edit;
+    return;
+  }
+  box.className = "card profile";
+  const title = images.length ? "Photos from the owner" : "From the owner";
+  box.innerHTML = `<div class="ph-head"><b>${title}</b><button class="link-btn" id="pedit">Edit</button></div>
+    ${images.length ? `<div class="ph-stage" id="pstage" hidden>${images.map((c, i) => `<button class="ph-slide" data-i="${i}" aria-label="Close photo"><img src="${profileImg(c)}" alt="Photo ${i + 1} of ${images.length} from the owner" loading="lazy"></button>`).join("")}</div>
+    <div class="ph-row">${images.map((c, i) => `<button class="ph-thumb" data-i="${i}" aria-pressed="false" aria-label="Open photo ${i + 1}"><img src="${profileImg(c)}" alt="" loading="lazy"></button>`).join("")}</div>` : ""}
+    ${desc ? `<p class="ph-desc">${esc(desc)}</p>` : ""}`;
+  $("#pedit").onclick = edit;
+  const stage = box.querySelector("#pstage");
+  const thumbs = [...box.querySelectorAll(".ph-thumb")];
+  const mark = (i) => thumbs.forEach((t, k) => t.setAttribute("aria-pressed", String(k === i)));
+  const close = () => { stage.hidden = true; mark(-1); };
+  thumbs.forEach((t, i) => (t.onclick = () => {
+    if (!stage.hidden && t.getAttribute("aria-pressed") === "true") return close();
+    stage.hidden = false;
+    stage.scrollTo({ left: i * stage.clientWidth, behavior: "instant" });
+    mark(i);
+    stage.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }));
+  stage?.querySelectorAll(".ph-slide").forEach((s) => (s.onclick = close));
+  stage?.addEventListener("scroll", () => { if (!stage.hidden) mark(Math.round(stage.scrollLeft / stage.clientWidth)); }, { passive: true });
+  const d = box.querySelector(".ph-desc");
+  if (d) d.onclick = () => d.classList.toggle("open");
+}
+
+let p2pLoading = null;
+function loadP2P() {
+  if (window.SSP2P) return Promise.resolve(window.SSP2P);
+  p2pLoading ??= new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "vendor/p2p.js";
+    s.onload = () => res(window.SSP2P);
+    s.onerror = () => { p2pLoading = null; rej(new Error("Could not load the publishing module")); };
+    document.head.appendChild(s);
+  });
+  return p2pLoading;
+}
+
+async function renderProfileEdit(id, tok) {
+  app.innerHTML = `
+    <div class="bar">${barBack()}<div class="end"></div></div>
+    <h1 class="page-h">Sensor profile</h1>
+    <p class="muted">Photos and a few words from you, shown with this sensor in the app and on the map. Everything is optional.</p>
+    <form class="card prof-form" id="pf" autocomplete="off">
+      <label class="lbl" for="pdesc">About this sensor</label>
+      <textarea id="pdesc" maxlength="500" rows="4" placeholder="e.g. 5th floor balcony, a park across the street"></textarea>
+      <small class="muted" id="pcount">0 / 500</small>
+      <label class="lbl">Photos, up to 3</label>
+      <div class="ph-grid edit" id="pgrid"></div>
+      <label class="btn outline sm" for="pfiles">Add photos</label>
+      <input id="pfiles" type="file" accept="image/*" multiple hidden>
+      <p class="muted small">No faces, house numbers or street signs: the photo is public. Location data is removed from the file.</p>
+      <label class="lbl" for="pseed">Owner's secret phrase</label>
+      <textarea id="pseed" rows="3" spellcheck="false" autocapitalize="off" placeholder="twelve words of the account that owns this sensor"></textarea>
+      <p class="muted small">Used once to sign the profile on Robonomics, never saved and never sent anywhere.</p>
+      <button class="btn" type="submit" id="pgo">Publish</button>
+      <p class="msg" id="msg"></p>
+    </form>`;
+  $("#back").onclick = () => back(`#/s/${encodeURIComponent(id)}`);
+
+  const keep = []; // CIDs of photos already in the profile
+  const fresh = []; // { blob, url } prepared on this phone
+  const draw = () => {
+    const items = [...keep.map((c) => ({ src: profileImg(c), k: "keep", v: c })), ...fresh.map((f, i) => ({ src: f.url, k: "new", v: i }))];
+    $("#pgrid").innerHTML = items.map((it) => `<figure><img src="${it.src}" alt=""><button type="button" class="ph-x" data-k="${it.k}" data-v="${esc(it.v)}" aria-label="Remove photo">×</button></figure>`).join("");
+    $("#pgrid").querySelectorAll(".ph-x").forEach((b) => (b.onclick = () => {
+      if (b.dataset.k === "keep") keep.splice(keep.indexOf(b.dataset.v), 1);
+      else URL.revokeObjectURL(fresh.splice(Number(b.dataset.v), 1)[0].url);
+      draw();
+    }));
+    $("label[for=pfiles]").hidden = keep.length + fresh.length >= 3;
+  };
+  const desc = $("#pdesc");
+  desc.oninput = () => ($("#pcount").textContent = `${[...desc.value].length} / 500`);
+  draw();
+
+  getProfile(id).then((p) => {
+    if (tok !== renderToken || !p) return;
+    if (p.description && !desc.value) { desc.value = p.description; desc.oninput(); }
+    keep.push(...p.images.slice(0, 3)); draw();
+  }).catch(() => {});
+
+  $("#pfiles").onchange = async (e) => {
+    const files = [...e.target.files].slice(0, 3 - keep.length - fresh.length);
+    e.target.value = "";
+    try {
+      const P = await loadP2P();
+      for (const f of files) { const { blob } = await P.prepareImage(f); fresh.push({ blob, url: URL.createObjectURL(blob) }); }
+      draw();
+    } catch (err) { setMsg(err.message, "err"); }
+  };
+
+  $("#pf").onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = $("#pgo");
+    btn.disabled = true;
+    try {
+      const P = await loadP2P();
+      const res = await P.publishProfile({
+        mnemonic: $("#pseed").value, sensor: id, description: desc.value,
+        photos: fresh.map((f) => f.blob), keepImages: keep,
+        rpc: CHAIN_RPC, kubo: await profileNode(), profileApi: PROFILE_API,
+        onStatus: (t) => setMsg(t),
+      });
+      $("#pseed").value = "";
+      setMsg(`Published: ${res.images.length} photo(s). It shows on the sensor now.`, "ok");
+      setTimeout(() => { if (route().view === "profile") back(`#/s/${encodeURIComponent(id)}`); }, 1500);
+    } catch (err) {
+      setMsg(err.message, "err");
+    } finally {
+      btn.disabled = false;
+    }
+  };
 }
 
 /* ---------- parameter ---------- */

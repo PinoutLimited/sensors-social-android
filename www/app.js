@@ -14,10 +14,10 @@
 
 const API = "https://roseman.robonomics.network/";
 const SITE = "https://sensors.social/";
-/* Sensor profiles (photos + owner's description): our RoSeMAN and Kubo on mc-server. The phone
- * hands photos to that Kubo over IPFS (bitswap); the chain (Robonomics CPS) holds only the CID. */
-const PROFILE_API = "https://share.sensors.social/roseman/api/";
-const KUBO_P2P = "/dns4/share.sensors.social/tcp/443/wss/p2p/12D3KooWDjv73TxiuxMQVPHYQmHr3uNjbUZuAMpbmzfevXonQvgC";
+/* Sensor profiles (photos + owner's description) live in RoSeMAN with a Kubo beside it. The phone
+ * hands photos to that Kubo over IPFS (bitswap); the chain (Robonomics CPS) holds only the CID.
+ * RoSeMAN announces its Kubo at v2/profile/node, so only its URL is configured here. */
+const PROFILE_API = `${API}api/`;
 const CHAIN_RPC = "wss://polkadot.rpc.robonomics.network/";
 
 /* The map opens in a Chrome Custom Tab over the app: its × and the system Back return to the
@@ -863,6 +863,12 @@ async function renderDevice(id, tok) {
 }
 
 /* ---------- sensor profile: photos and the owner's description ---------- */
+async function profileNode() {
+  const r = await fetch(`${PROFILE_API}v2/profile/node`, { cache: "no-store" });
+  const addr = r.ok ? (await r.json()).result?.multiaddrs?.[0] : null;
+  if (!addr) throw new Error("The sensor server does not take photos yet. Try again later.");
+  return addr;
+}
 const profileImg = (cid) => `${PROFILE_API}v2/profile/image/${encodeURIComponent(cid)}`;
 async function getProfile(id) {
   const r = await fetch(`${PROFILE_API}v2/profile/${encodeURIComponent(id)}`, { cache: "no-store" });
@@ -988,7 +994,7 @@ async function renderProfileEdit(id, tok) {
       const res = await P.publishProfile({
         mnemonic: $("#pseed").value, sensor: id, description: desc.value,
         photos: fresh.map((f) => f.blob), keepImages: keep,
-        rpc: CHAIN_RPC, kubo: KUBO_P2P, profileApi: PROFILE_API,
+        rpc: CHAIN_RPC, kubo: await profileNode(), profileApi: PROFILE_API,
         onStatus: (t) => setMsg(t),
       });
       $("#pseed").value = "";

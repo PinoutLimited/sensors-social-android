@@ -1,7 +1,7 @@
 // node --test p2p/  — pure parts of the profile publisher.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildProfileDocument, findSensorNode, profileMeta, ROOT_META } from "./index.js";
+import { buildProfileDocument, findSensorNode, profileMeta, ROOT_META, uploadOutcome } from "./index.js";
 
 const SENSOR = "4TestSensorAddressForProfiLeSpecs1111111111111111";
 
@@ -39,4 +39,23 @@ test("meta fits CPS limits (≤1 KiB) and matches the RoSeMAN parser", () => {
   assert.ok(new TextEncoder().encode(meta).length <= 1024);
   assert.deepEqual(JSON.parse(meta), { t: "ss.profile", v: 1, sensor: SENSOR });
   assert.deepEqual(ROOT_META, { t: "ss.profiles", v: 1 });
+});
+
+test("the previous profile, still ready before the new payload is indexed, is not success", () => {
+  const before = { status: "ready", pending_cid: null, block: 100 };
+  assert.equal(uploadOutcome(before, { status: "ready", pending_cid: null, block: 100 }, "bafknew"), "wait");
+  assert.equal(uploadOutcome(before, { status: "pending", pending_cid: "bafknew", block: 100 }, "bafknew"), "wait");
+  assert.equal(uploadOutcome(before, { status: "ready", pending_cid: null, block: 140 }, "bafknew"), "done");
+});
+
+test("first profile of a sensor: ready means done", () => {
+  assert.equal(uploadOutcome(null, null, "bafknew"), "wait");
+  assert.equal(uploadOutcome(null, { status: "ready", pending_cid: null, block: 140 }, "bafknew"), "done");
+});
+
+test("a rejection of this profile fails; an old rejection does not", () => {
+  const before = { status: "failed", pending_cid: null, block: 100 };
+  assert.equal(uploadOutcome(before, before, "bafknew"), "wait");
+  assert.equal(uploadOutcome(before, { status: "failed", pending_cid: "bafknew", block: 100 }, "bafknew"), "failed");
+  assert.equal(uploadOutcome(before, { status: "failed", pending_cid: null, block: 140 }, "bafknew"), "failed");
 });

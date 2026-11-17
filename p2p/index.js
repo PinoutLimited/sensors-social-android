@@ -58,6 +58,19 @@ export function buildProfileDocument(sensor, description, imageCids) {
 }
 
 /** Finds the child node whose meta names this sensor. */
+/**
+ * What the profile API says about this upload. RoSeMAN indexes a payload only after the block is
+ * finalized, so for a while it still shows the previous profile as ready: success needs a payload
+ * newer than the one seen before signing (a new block), not just "ready".
+ */
+export function uploadOutcome(before, now, target) {
+  if (!now) return "wait";
+  const newer = !before || now.block !== before.block;
+  if (now.status === "failed" && (now.pending_cid === target || (!now.pending_cid && newer))) return "failed";
+  if (now.status === "ready" && !now.pending_cid && newer) return "done";
+  return "wait";
+}
+
 export function findSensorNode(children, sensor) {
   for (const { id, meta } of children) {
     try {
@@ -237,6 +250,13 @@ export async function publishProfile(opts) {
       ]);
     await connectKubo();
 
+    const readProfile = async () => {
+      const res = await fetch(`${opts.profileApi}v2/profile/${opts.sensor}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`Profile API ${res.status}`);
+      return (await res.json()).result;
+    };
+    const before = await readProfile();
+
     // 4. Point the node at the new profile.
     say("Signing the profile on Robonomics…");
     await signAndWait(api, viaRws(api.tx.cps.setPayload(nodeId, bytesArg(profileCid.bytes))), pair);
@@ -250,16 +270,15 @@ export async function publishProfile(opts) {
       if (!helia.libp2p.getConnections().some((c) => c.remotePeer.toString() === kuboPeer && c.status === "open")) {
         await connectKubo().catch(() => {});
       }
+      let p;
       try {
-        const res = await fetch(`${opts.profileApi}v2/profile/${opts.sensor}`, { cache: "no-store" });
-        const p = (await res.json()).result;
-        if (p && p.status === "ready" && !p.pending_cid) return { profileCid: target, nodeId, images: p.images };
-        if (p && p.status === "failed" && (p.pending_cid === target || !p.pending_cid)) {
-          throw new Error(`The server rejected the profile: ${p.error || "unknown error"}`);
-        }
-      } catch (e) {
-        if (String(e.message).startsWith("The server rejected")) throw e;
+        p = await readProfile();
+      } catch {
+        continue;
       }
+      const outcome = uploadOutcome(before, p, target);
+      if (outcome === "done") return { profileCid: target, nodeId, images: p.images };
+      if (outcome === "failed") throw new Error(`The server rejected the profile: ${p.error || "unknown error"}`);
     }
     throw new Error("The server did not confirm the upload in 5 minutes. Open the app and try again.");
   } finally {

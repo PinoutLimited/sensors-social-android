@@ -14,6 +14,7 @@
   --poor: #C62828; --poor-bg: rgba(198,40,40,.10);
   --sel-bg: #1C1C1C; --sel-text: #F4F4F2;
   --mark: url("img/ss-mark-black.svg"); --word: url("img/ss-word-black.svg");
+  --pattern: url("img/ss-pattern-light.svg");
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -25,11 +26,14 @@
     --poor: #FF7A66; --poor-bg: rgba(255,122,102,.12);
     --sel-bg: #F4F4F2; --sel-text: #1C1C1C;
     --mark: url("img/ss-mark-white.svg"); --word: url("img/ss-word-white.svg");
+    --pattern: url("img/ss-pattern-dark.svg");
   }
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; background: var(--bg); color: var(--text); }
+html, body { margin: 0; color: var(--text); }
+/* Background: the mark's nodes and connectors as a quiet pattern; cards stay plain. */
+html { background: var(--bg) var(--pattern) 0 0 / 128px 80px repeat; overflow-x: clip; }
 /* Since targetSdk 35 the app draws under a transparent status bar; without this strip the
    page scrolls under the clock and icons. Height comes from the inset Capacitor passes in. */
 body::before {
@@ -332,13 +336,22 @@ html.scanning #app, html.scanning body::before { visibility: hidden; }
 .ph-slot svg { width: 22px; height: 22px; }
 .ph-head { display: flex; justify-content: space-between; align-items: baseline; }
 .link-btn { border: 0; background: none; color: var(--accent, #004EC4); font-weight: 600; padding: 0; }
-.ph-row { display: flex; gap: 8px; align-items: flex-start; }
-.ph-thumb { flex: none; width: 64px; height: 64px; padding: 0; border: 0; border-radius: 10px; overflow: hidden; background: var(--line); }
+.ph-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ph-thumb { aspect-ratio: 1; padding: 0; border: 0; border-radius: 12px; overflow: hidden; background: var(--line); outline: 2px solid transparent; outline-offset: 2px; transition: outline-color .15s; }
+.ph-thumb[aria-pressed="true"] { outline-color: var(--blue); }
 .ph-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ph-desc { margin: 0; min-width: 0; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .ph-desc.open { -webkit-line-clamp: unset; white-space: pre-line; }
-.ph-full { position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, .9); display: flex; align-items: center; justify-content: center; }
-.ph-full img { max-width: 96vw; max-height: 92vh; border-radius: 8px; }
+/* A tapped photo opens inside the card, edge to edge of the screen; swipe for the next one. */
+.ph-stage { width: min(100vw, 760px); margin-left: calc(50% - min(50vw, 380px)); display: flex; align-items: center;
+  overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; background: var(--surface2); animation: ph-open .22s ease-out; }
+.ph-stage::-webkit-scrollbar { display: none; }
+.ph-stage[hidden] { display: none; }
+.ph-slide { flex: 0 0 100%; scroll-snap-align: center; border: 0; padding: 0; background: none; }
+.ph-slide img { display: block; width: 100%; height: auto; max-height: 78vh; object-fit: contain; }
+.ph-count { justify-self: center; font-size: 13px; color: var(--muted); }
+@keyframes ph-open { from { opacity: 0; transform: scale(.97); } }
+@media (prefers-reduced-motion: reduce) { .ph-stage { animation: none; } .ph-thumb { transition: none; } }
 /* editor grid */
 .ph-grid { display: grid; gap: 6px; grid-template-columns: repeat(3, 1fr); }
 .ph-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 12px; display: block; background: var(--line); }

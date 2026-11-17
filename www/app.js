@@ -889,17 +889,25 @@ async function showProfile(id, tok) {
     return;
   }
   box.className = "card profile";
-  box.innerHTML = `<div class="ph-head"><b>Sensor profile</b><button class="link-btn" id="pedit">Edit</button></div>
-    <div class="ph-row">${images.map((c) => `<button class="ph-thumb" data-c="${esc(c)}" aria-label="Photo of the sensor"><img src="${profileImg(c)}" alt="" loading="lazy"></button>`).join("")}
-    ${desc ? `<p class="ph-desc">${esc(desc)}</p>` : ""}</div>`;
+  const title = images.length ? "Photos from the owner" : "From the owner";
+  box.innerHTML = `<div class="ph-head"><b>${title}</b><button class="link-btn" id="pedit">Edit</button></div>
+    ${images.length ? `<div class="ph-stage" id="pstage" hidden>${images.map((c, i) => `<button class="ph-slide" data-i="${i}" aria-label="Close photo"><img src="${profileImg(c)}" alt="Photo ${i + 1} of ${images.length} from the owner" loading="lazy"></button>`).join("")}</div>
+    <div class="ph-row">${images.map((c, i) => `<button class="ph-thumb" data-i="${i}" aria-pressed="false" aria-label="Open photo ${i + 1}"><img src="${profileImg(c)}" alt="" loading="lazy"></button>`).join("")}</div>` : ""}
+    ${desc ? `<p class="ph-desc">${esc(desc)}</p>` : ""}`;
   $("#pedit").onclick = edit;
-  box.querySelectorAll(".ph-thumb").forEach((b) => (b.onclick = () => {
-    const o = document.createElement("div");
-    o.className = "ph-full";
-    o.innerHTML = `<img src="${profileImg(b.dataset.c)}" alt="Photo of the sensor">`;
-    o.onclick = () => o.remove();
-    document.body.appendChild(o);
+  const stage = box.querySelector("#pstage");
+  const thumbs = [...box.querySelectorAll(".ph-thumb")];
+  const mark = (i) => thumbs.forEach((t, k) => t.setAttribute("aria-pressed", String(k === i)));
+  const close = () => { stage.hidden = true; mark(-1); };
+  thumbs.forEach((t, i) => (t.onclick = () => {
+    if (!stage.hidden && t.getAttribute("aria-pressed") === "true") return close();
+    stage.hidden = false;
+    stage.scrollTo({ left: i * stage.clientWidth, behavior: "instant" });
+    mark(i);
+    stage.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }));
+  stage?.querySelectorAll(".ph-slide").forEach((s) => (s.onclick = close));
+  stage?.addEventListener("scroll", () => { if (!stage.hidden) mark(Math.round(stage.scrollLeft / stage.clientWidth)); }, { passive: true });
   const d = box.querySelector(".ph-desc");
   if (d) d.onclick = () => d.classList.toggle("open");
 }

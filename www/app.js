@@ -236,6 +236,7 @@ const ODBL = "https://opendatacommons.org/licenses/odbl/1-0/";
 /** Home screen footer: where to go next, what is open, which version this is. */
 function appFooter() {
   return `<footer class="app-foot">
+    <a id="upd" class="card update" hidden></a>
     <nav aria-label="sensors.social">
       <a href="${SITE}" data-site="">Map</a><a href="${SITE}blog/" data-site="blog/">Blog</a>
       <a href="${SUPPORT}">Help and support</a><a href="${SITE}privacy-policy/" data-site="privacy-policy/">Privacy</a>
@@ -256,7 +257,31 @@ function wireFooter() {
     if (!v || !info?.version) return;
     v.textContent = `sensors.social for Android ${info.version}`;
     v.href = `${REPO}/releases/tag/v${info.version}`;
+    showUpdate(info.version);
   }).catch(() => {});
+}
+/** Latest GitHub release, cached for 6 h: the anonymous API allows 60 requests an hour per IP. */
+const RELEASE_TTL = 6 * 3600 * 1000;
+async function latestRelease() {
+  const c = loadJSON("latestRelease", null);
+  if (c && Date.now() - c.at < RELEASE_TTL) return c.release;
+  const r = await fetch(`https://api.github.com/repos/${REPO.replace("https://github.com/", "")}/releases/latest`,
+    { headers: { Accept: "application/vnd.github+json" } });
+  if (!r.ok) throw new Error(`GitHub ${r.status}`);
+  const { tag_name, html_url, draft, prerelease } = await r.json();
+  const release = { tag_name, html_url, draft, prerelease };
+  saveJSON("latestRelease", { at: Date.now(), release });
+  return release;
+}
+/** A card above the footer when a newer release is out; offline or rate-limited, nothing shows. */
+async function showUpdate(installed) {
+  let up;
+  try { up = newerRelease(installed, await latestRelease()); } catch { return; }
+  const el = $("#upd");
+  if (!up || !el) return;
+  el.href = up.url;
+  el.innerHTML = `<b>sensors.social for Android ${esc(up.version)} is out</b><small>Download the new version from GitHub</small>`;
+  el.hidden = false;
 }
 
 /* ---------- home ---------- */
